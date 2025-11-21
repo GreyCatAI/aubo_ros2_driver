@@ -9,10 +9,9 @@ import argparse
 
 
 TEST_JSON = {
-    "jsonrpc": "2.0",
-    "method": "rob1.RobotState.getTcpPose",
-    "params": [],
-    "id": 1
+    "cls": "RobotState",
+    "func": "getTcpPose",
+    "params": "[]",
 }
 
 
@@ -27,22 +26,27 @@ class JsonRpcTestClient(Node):
         self.frequency_hz = frequency_hz
         self.interval = 1.0 / frequency_hz
 
+        # Reset counters
         self.total_calls = 0
         self.success_calls = 0
         self.failed_calls = 0
         self.latencies = []
+        self.last_result = ""
+        self.last_error = ""
         self.lock = threading.Lock()
 
         # 计时器：发送请求
         self.timer = self.create_timer(self.interval, self.send_request)
         # 每秒打印一次统计信息
-        self.create_timer(1.0, self.print_stats)
+        self.create_timer(self.interval, self.print_stats)
 
         self.get_logger().info(f"[PERF TEST] Starting test at {frequency_hz:.1f} Hz")
 
     def send_request(self):
         request = JsonRpc.Request()
-        request.jsonrpc_send = json.dumps(TEST_JSON)
+        request.cls = TEST_JSON["cls"]
+        request.func = TEST_JSON["func"]
+        request.params = TEST_JSON["params"]
 
         start_time = time.time()
         future = self.cli.call_async(request)
@@ -53,9 +57,14 @@ class JsonRpcTestClient(Node):
 
             with self.lock:
                 self.total_calls += 1
+                resp = fut.result() 
+
                 if fut.result() is not None:
                     self.success_calls += 1
                     self.latencies.append(latency)
+                    # Save real service response
+                    self.last_result = resp.result
+                    self.last_error = resp.error
                 else:
                     self.failed_calls += 1
 
@@ -72,13 +81,9 @@ class JsonRpcTestClient(Node):
 
             self.get_logger().info(
                 f"Calls: {self.total_calls}, Success: {self.success_calls}, Failed: {self.failed_calls}, "
-                f"Latency(ms) [Avg: {avg:.2f}, Min: {mn:.2f}, Max: {mx:.2f}]"
+                f"Latency(ms) [Avg: {avg:.2f}, Min: {mn:.2f}, Max: {mx:.2f}], "
+                f"LastResult: {self.last_result}, LastError: {self.last_error}"
             )
-
-            self.total_calls = 0
-            self.success_calls = 0
-            self.failed_calls = 0
-            self.latencies = []
 
 
 def main():

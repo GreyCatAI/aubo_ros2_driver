@@ -3,6 +3,7 @@ import rclpy
 from rclpy.node import Node
 from aubo_msgs.srv import JsonRpc
 import socket
+import json
 
 
 class TcpClientService(Node):
@@ -12,17 +13,45 @@ class TcpClientService(Node):
         # Declare and get parameters
         self.declare_parameter('tcp_client.ip', '127.0.0.1')
         self.declare_parameter('tcp_client.port', 30004)
+        self.declare_parameter('tcp_client.robot_prefix', 'rob1')
 
         self.tcp_ip = self.get_parameter('tcp_client.ip').get_parameter_value().string_value
         self.tcp_port = self.get_parameter('tcp_client.port').get_parameter_value().integer_value
+        self.robot_prefix = self.get_parameter('tcp_client.robot_prefix').get_parameter_value().string_value
 
         self.sock = None
-        self.connect_tcp()
+        comm = self.connect_tcp()
 
         # Create the service
         self.srv = self.create_service(JsonRpc, 'jsonrpc_service', self.handle_service)
 
-        self.get_logger().info(f'[AUBO CLIENT] Ready to send TCP messages to {self.tcp_ip}:{self.tcp_port}')
+        if comm:
+            self.get_logger().info(
+                f'[AUBO CLIENT] Ready to send JSON-RPC to {self.tcp_ip}:{self.tcp_port} '
+                f'robot="{self.robot_prefix}"'
+            )
+        else:
+            self.get_logger().error(
+                f'[AUBO CLIENT] Not Ready to send JSON-RPC to {self.tcp_ip}:{self.tcp_port} '
+                f'robot="{self.robot_prefix}"'
+            )
+            quit()
+
+    def build_method_name(self, cls: str, func: str) -> str:
+        cls = cls.strip()
+        func = func.strip()
+
+        # If user already passed a full method like "rob1.RobotState.getTcpPose"
+        if '.' in func and func.startswith(self.robot_prefix + '.'):
+            return func
+
+        # If user passed something like "RobotState.getTcpPose"
+        if '.' in func and not func.startswith(self.robot_prefix + '.'):
+            return f'{self.robot_prefix}.{func}'
+
+        # If user passed class + function
+        if cls:
+            return f'{self.robot_prefix}.{cls}.{func}'
 
     def connect_tcp(self):
         if self.sock:
@@ -32,9 +61,11 @@ class TcpClientService(Node):
             self.sock.settimeout(5.0)
             self.sock.connect((self.tcp_ip, self.tcp_port))
             self.get_logger().info(f'[TCP] Connected to {self.tcp_ip}:{self.tcp_port}')
+            return True
         except Exception as e:
             self.get_logger().error(f'[TCP] Failed to connect: {e}')
             self.sock = None
+            return False
 
     def handle_service(self, request, response):
         if not self.sock:
@@ -44,23 +75,61 @@ class TcpClientService(Node):
                 response.jsonrpc_response = "[ERROR] Failed to connect"
                 return response
 
-        try:
-            # Send request
-            self.get_logger().debug(f"[TCP] Sending: {request.jsonrpc_send}")
-            self.sock.sendall(request.jsonrpc_send.encode('utf-8'))
+        # Build JSON-RPC request object
+        method = self.build_method_name(request.cls, request.func)
 
-            # Receive response
+        # Parse params (must be valid JSON string)
+        try:
+            params = json.loads(request.params) if request.params.strip() else []
+        except Exception as e:
+            self.get_logger().warn(f'[JSON] Failed to parse params, using [] instead. err={e}')
+            params = []
+
+        msg = {
+            'jsonrpc': '2.0',
+            'method': method,
+            'params': params,
+            'id': 1,
+        }
+
+        try:
+            send_str = json.dumps(msg)
+            self.get_logger().debug(f"[TCP] Sending: {send_str}")
+            self.sock.sendall(send_str.encode('utf-8'))
+
+            # Receive raw JSON from server
             data = self.sock.recv(4096).decode('utf-8')
-            response.jsonrpc_response = data
-            self.get_logger().debug(f"[TCP] Received: {data}")
+            self.get_logger().debug(f'[TCP] Received raw: {data}')
+
+            # Try parsing JSON response
+            try:
+                resp_obj = json.loads(data)
+            except Exception as e:
+                # Response is not valid JSON
+                self.get_logger().error(f'[JSON] Failed to parse response: {e}')
+                response.result = ''
+                response.error = data
+                return response
+
+            # JSON-RPC success case (result exists)
+            if 'error' in resp_obj and resp_obj['error'] is not None:
+                # JSON-RPC error case
+                response.result = 'None'
+                response.error = json.dumps(resp_obj['error'], ensure_ascii=False)
+            else:
+                # JSON-RPC had result case
+                result_val = resp_obj.get('result', None)
+                response.result = json.dumps(result_val, ensure_ascii=False)
+                response.error = 'None'
 
         except Exception as e:
-            self.get_logger().error(f"[TCP] Communication error: {e}")
+            self.get_logger().error(f'[TCP] Communication error: {e}')
             self.sock = None  # Force reconnect next time
-            response.jsonrpc_response = f"[ERROR] {e}"
+            response.result = ''
+            response.error = f'[ERROR] {e}'
 
         return response
-
+    
     def destroy_node(self):
         if self.sock:
             self.sock.close()

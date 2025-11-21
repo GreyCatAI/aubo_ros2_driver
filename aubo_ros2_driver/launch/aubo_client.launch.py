@@ -6,7 +6,7 @@ from launch.substitutions import LaunchConfiguration
 def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument(
-            'ip',
+            'robot_ip',
             default_value='127.0.0.1',
             description='TCP server IP'
         ),
@@ -25,7 +25,7 @@ def generate_launch_description():
             name='aubo_client',
             output='screen',
             parameters=[{
-                'tcp_client.ip': LaunchConfiguration('ip'),
+                'tcp_client.ip': LaunchConfiguration('robot_ip'),
                 'tcp_client.port': LaunchConfiguration('port'),
             }],
             arguments=['--ros-args', '--log-level', LaunchConfiguration('log_level')]
