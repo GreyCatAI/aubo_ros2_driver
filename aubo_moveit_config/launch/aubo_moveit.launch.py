@@ -73,11 +73,26 @@ def launch_setup(context, *args, **kwargs):
             "aubo_moveit_config", "config/joint_limits.yaml"
         )
     }
+    from moveit_project.launch_config.xarm.inner import XarmMoveItConfigBuilder
+
+    a = (
+        XarmMoveItConfigBuilder("a")
+        .planning_pipelines(
+            planner_base_path=get_package_share_directory("moveit_project"),
+            pipelines=["ompl"],
+        )
+        .to_moveit_configs()
+    ).to_dict()
+    planning_pipeline = {
+        "planning_pipelines": a["planning_pipelines"],
+        "default_planning_pipeline": a["default_planning_pipeline"],
+        "ompl": a["ompl"],
+    }
 
     # Planning Functionality
     ompl_planning_pipeline_config = {
         "move_group": {
-            "planning_plugin": "ompl_interface/OMPLPlanner",
+            "planning_plugins": ["ompl_interface/OMPLPlanner"],
             "request_adapters": """default_planner_request_adapters/AddTimeOptimalParameterization default_planner_request_adapters/ResolveConstraintFrames default_planner_request_adapters/FixWorkspaceBounds default_planner_request_adapters/FixStartStateBounds default_planner_request_adapters/FixStartStateCollision default_planner_request_adapters/FixStartStatePathConstraints""",
             "start_state_max_bounds_error": 0.1,
             "sample_duration": 0.005,
@@ -128,7 +143,8 @@ def launch_setup(context, *args, **kwargs):
             robot_description,
             robot_description_semantic,
             kinematics_yaml,
-            ompl_planning_pipeline_config,
+            # ompl_planning_pipeline_config,
+            planning_pipeline,
             trajectory_execution,
             moveit_controllers,
             planning_scene_monitor_parameters,
