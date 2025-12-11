@@ -26,7 +26,7 @@ def generate_launch_description():
         DeclareLaunchArgument(
             "aubo_type",
             default_value="aubo_i5",
-            description='Description with aubo robot type.',
+            description="Description with aubo robot type.",
         )
     )
     declared_arguments.append(
@@ -130,7 +130,11 @@ def generate_launch_description():
             PathJoinSubstitution([FindExecutable(name="xacro")]),
             " ",
             PathJoinSubstitution(
-                [FindPackageShare(description_package), "urdf/xacro/inc/", description_file]
+                [
+                    FindPackageShare(description_package),
+                    "urdf/xacro/inc/",
+                    description_file,
+                ]
             ),
             " ",
             "prefix:=",
@@ -148,7 +152,6 @@ def generate_launch_description():
             "aubo_type:=",
             aubo_type,
             " ",
-           
         ]
     )
     robot_description = {"robot_description": robot_description_content}
@@ -161,12 +164,21 @@ def generate_launch_description():
         [FindPackageShare(moveit_config_package), "rviz", "moveit.rviz"]
     )
 
-    
     aubo_control_node = Node(
         package="aubo_ros2_driver",
         executable="aubo_ros2_control_node",
         parameters=[robot_description, robot_controllers],
         output="both",
+    )
+
+    aubo_control_node = Node(
+        package="controller_manager",
+        executable="ros2_control_node",
+        parameters=[
+            robot_description,
+            robot_controllers,
+        ],
+        output="screen",
     )
     robot_state_publisher_node = Node(
         package="robot_state_publisher",
