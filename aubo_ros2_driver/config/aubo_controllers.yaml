@@ -1,6 +1,6 @@
 controller_manager:
   ros__parameters:
-    update_rate: 200  # Hz  250
+    update_rate: 150 # Hz
 
     joint_state_broadcaster:
       type: joint_state_broadcaster/JointStateBroadcaster
@@ -16,7 +16,7 @@ joint_trajectory_controller:
     joints:
       - shoulder_joint
       - upperArm_joint
-      - foreArm_joint  #foreArm_joint
+      - foreArm_joint #foreArm_joint
       - wrist1_joint
       - wrist2_joint
       - wrist3_joint
