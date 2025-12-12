@@ -142,7 +142,8 @@ def launch_setup(context, *args, **kwargs):
         parameters=[
             robot_description,
             robot_description_semantic,
-            kinematics_yaml,
+            {"robot_description_kinematics": kinematics_yaml},
+            # kinematics_yaml,
             # ompl_planning_pipeline_config,
             planning_pipeline,
             trajectory_execution,
@@ -167,7 +168,7 @@ def launch_setup(context, *args, **kwargs):
             robot_description,
             robot_description_semantic,
             ompl_planning_pipeline_config,
-            kinematics_yaml,
+            {"robot_description_kinematics": kinematics_yaml},
             joint_limits_yaml,
         ],
     )
