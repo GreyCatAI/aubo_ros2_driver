@@ -2,8 +2,30 @@
 #include <pluginlib/class_list_macros.hpp>
 #include "rclcpp/rclcpp.hpp"
 #include "hardware_interface/types/hardware_interface_type_values.hpp"
+#include <chrono>
+#include <cstdlib>
 #include <ctime>
 namespace aubo_driver {
+
+namespace {
+
+constexpr auto kRtdeSampleTimeout = std::chrono::milliseconds(100);
+
+std::int64_t steadyTimeNs()
+{
+    return std::chrono::duration_cast<std::chrono::nanoseconds>(
+               std::chrono::steady_clock::now().time_since_epoch())
+        .count();
+}
+
+[[noreturn]] void exitDriver(const char *reason)
+{
+    RCLCPP_FATAL(rclcpp::get_logger("AuboHardwareInterface"), "%s", reason);
+    rclcpp::shutdown();
+    std::exit(EXIT_FAILURE);
+}
+
+} // namespace
 
 AuboHardwareInterface::~AuboHardwareInterface()
 {
@@ -12,6 +34,7 @@ AuboHardwareInterface::~AuboHardwareInterface()
 bool AuboHardwareInterface::OnActive()
 {
     const std::string robot_ip_ = info_.hardware_parameters["robot_ip"];
+    last_rtde_sample_ns_.store(0);
     rpc_client_ = std::make_shared<RpcClient>();
 
     rpc_client_->setRequestTimeout(1000);
@@ -159,6 +182,14 @@ AuboHardwareInterface::export_command_interfaces()
 hardware_interface::return_type AuboHardwareInterface::read(
     const rclcpp::Time &time, const rclcpp::Duration &period)
 {
+    const auto last_sample_ns = last_rtde_sample_ns_.load();
+    const auto sample_age_ns = steadyTimeNs() - last_sample_ns;
+    if (last_sample_ns == 0 ||
+        sample_age_ns > std::chrono::duration_cast<std::chrono::nanoseconds>(
+                            kRtdeSampleTimeout)
+                            .count()) {
+        exitDriver("AUBO connection or RTDE state lost; exiting for launch restart");
+    }
     readActualQ();
     if (!initialized_) {
         //获取初始状态
@@ -176,6 +207,9 @@ hardware_interface::return_type AuboHardwareInterface::write(
         try {
             Servoj(aubo_position_commands_);
         } catch (const std::exception &e) {
+            RCLCPP_ERROR(rclcpp::get_logger("AuboHardwareInterface"),
+                         "AUBO command exception: %s", e.what());
+            exitDriver("AUBO command channel failed; exiting for launch restart");
         }
     }else{
         // 机器人状态异常
@@ -352,13 +386,19 @@ void AuboHardwareInterface::configSubscribe(RtdeClientPtr cli)
     // 接口调用: 订阅
     cli->subscribe(topic1, [this](InputParser &parser) {
         std::unique_lock<std::mutex> lck(rtde_mtx_);
-        actual_q_ = parser.popVectorDouble();
-        joint_velocity_ = parser.popVectorDouble();
+        auto actual_q = parser.popVectorDouble();
+        auto joint_velocity = parser.popVectorDouble();
+        if (actual_q.size() != 6 || joint_velocity.size() != 6) {
+            return;
+        }
+        actual_q_ = std::move(actual_q);
+        joint_velocity_ = std::move(joint_velocity);
         robot_mode_ = parser.popRobotModeType();
         safety_mode_ = parser.popSafetyModeType();
         runtime_state_ = parser.popRuntimeState();
         line_ = parser.popInt32();
         actual_TCP_pose_ = parser.popVectorDouble();
+        last_rtde_sample_ns_.store(steadyTimeNs());
     });
 }
 } // namespace aubo_driver

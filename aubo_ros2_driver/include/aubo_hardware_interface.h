@@ -2,6 +2,8 @@
 #define AUBO_HARDWARE_INTERFACE_H
 
 // System
+#include <atomic>
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <vector>
@@ -88,6 +90,7 @@ private:
     bool controllers_initialized_;
     bool servo_mode_start_{ false };
     bool initialized_;
+    std::atomic<std::int64_t> last_rtde_sample_ns_{ 0 };
 
     std::atomic<bool> robot_program_running_;
     std::atomic<bool> controller_reset_necessary_{ false };
