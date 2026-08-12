@@ -2,8 +2,13 @@
 #define AUBO_HARDWARE_INTERFACE_H
 
 // System
+#include <atomic>
+#include <chrono>
+#include <condition_variable>
 #include <memory>
+#include <mutex>
 #include <string>
+#include <thread>
 #include <vector>
 #include <limits>
 
@@ -28,7 +33,7 @@
 #include "aubo_sdk/rtde.h"
 #include "aubo_sdk/rpc.h"
 #include "serviceinterface.h"
-#include "thread"
+#include "robot_connection_recovery/connection_state_publisher.hpp"
 
 using namespace arcs::common_interface;
 using namespace arcs::aubo_sdk;
@@ -42,11 +47,13 @@ public:
     RCLCPP_SHARED_PTR_DEFINITIONS(AuboHardwareInterface);
     virtual ~AuboHardwareInterface();
 
-    bool OnActive();
+    bool connectOnce();
     hardware_interface::CallbackReturn on_activate(
         const rclcpp_lifecycle::State &previous_state);
     hardware_interface::CallbackReturn on_init(
         const hardware_interface::HardwareInfo &system_info) final;
+    hardware_interface::CallbackReturn on_deactivate(
+        const rclcpp_lifecycle::State &previous_state) final;
     std::vector<hardware_interface::StateInterface> export_state_interfaces()
         final;
 
@@ -72,13 +79,26 @@ public:
 
     int Servoj(const std::array<double, 6> joint_position_command);
 
-    void configSubscribe(RtdeClientPtr cli);
+    void configSubscribe(RtdeClientPtr cli, std::uint64_t generation);
 
 private:
+    void markDisconnected(std::uint64_t generation);
+    void reconnectLoop();
+    void requestReconnect();
+    void publishConnectionState(bool connected);
+    void disconnectClients();
+
     std::shared_ptr<RpcClient> rpc_client_{ nullptr };
     std::shared_ptr<RtdeClient> rtde_client_{ nullptr };
     std::vector<std::string> joint_names_;
     std::mutex rtde_mtx_;
+    std::mutex client_mtx_;
+    std::mutex reconnect_mtx_;
+    std::condition_variable reconnect_cv_;
+    std::thread reconnect_thread_;
+    std::shared_ptr<rclcpp::Node> node_;
+    std::unique_ptr<robot_connection_recovery::ConnectionStatePublisher>
+        connection_state_publisher_;
     std::string robot_ip_;
     std::string robot_name_;
 
@@ -87,7 +107,13 @@ private:
     double speed_scaling_combined_;
     bool controllers_initialized_;
     bool servo_mode_start_{ false };
-    bool initialized_;
+    std::atomic<bool> initialized_{ false };
+    std::atomic<bool> stopping_{ false };
+    std::atomic<bool> reconnect_requested_{ false };
+    std::atomic<bool> channels_initialized_{ false };
+    std::atomic<bool> connection_ready_{ false };
+    std::atomic<std::int64_t> last_rtde_sample_ns_{ 0 };
+    std::atomic<std::uint64_t> connection_generation_{ 0 };
 
     std::atomic<bool> robot_program_running_;
     std::atomic<bool> controller_reset_necessary_{ false };

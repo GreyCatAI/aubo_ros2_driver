@@ -52,6 +52,7 @@ find_package(std_srvs REQUIRED)
 find_package(tf2_geometry_msgs REQUIRED)
 find_package(aubo_dashboard_msgs REQUIRED)
 find_package(aubo_msgs REQUIRED)
+find_package(robot_connection_recovery REQUIRED)
 
 find_package(Boost REQUIRED)
 find_package(Threads REQUIRED)
@@ -68,6 +69,7 @@ set(THIS_PACKAGE_INCLUDE_DEPENDS
   tf2_geometry_msgs
   aubo_msgs
   aubo_dashboard_msgs
+  robot_connection_recovery
 )
 
 add_compile_options(-Wall)
@@ -146,4 +148,3 @@ ament_python_install_package(${PROJECT_NAME})
 #)
 
 ament_package()
-

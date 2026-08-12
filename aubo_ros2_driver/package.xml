@@ -42,6 +42,7 @@
   <depend>aubo_dashboard_msgs</depend>
   <depend>aubo_description</depend>
   <depend>aubo_msgs</depend>
+  <depend>robot_connection_recovery</depend>
 
   <exec_depend>force_torque_sensor_broadcaster</exec_depend>
   <exec_depend>joint_state_broadcaster</exec_depend>
